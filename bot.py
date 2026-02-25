@@ -8,18 +8,19 @@ from telegram.constants import ChatMemberStatus
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 # ==============================
-# PANEL BİLGİLERİ (PC/RAILWAY için açık)
+# PANEL BİLGİLERİ ORTAM DEĞİŞKENİNDEN (Railway)
+# Örnek: PANEL1_URL, PANEL1_USER, PANEL1_PASS, PANEL2_URL ...
 # ==============================
 PANELS = {
     "panel1": {
-        "url": "https://madrid.paneljaguar.com",
-        "username": "ALFI@123",
-        "password": "102030++"
+        "url": os.environ.get("PANEL1_URL"),
+        "username": os.environ.get("PANEL1_USER"),
+        "password": os.environ.get("PANEL1_PASS")
     },
     "panel2": {
-        "url": "https://berlin.tronpanel.com",
-        "username": "ALFI@12312",
-        "password": "102030++"
+        "url": os.environ.get("PANEL2_URL"),
+        "username": os.environ.get("PANEL2_USER"),
+        "password": os.environ.get("PANEL2_PASS")
     }
 }
 
@@ -88,20 +89,29 @@ async def fetch_user_amount(panel_config, user_uuid):
         return net
 
 # ==============================
-# /kasa KOMUTU (sadece yöneticiler)
+# /kasaXX KOMUTU (tüm SKY’lar, sadece yöneticiler)
 # ==============================
 async def kasa(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = await update.message.reply_text("⏳ Kasa verileri alınıyor...")
+
     try:
-        # Sadece yönetici kontrolü
+        # Yalnızca yönetici kontrolü
         member = await update.effective_chat.get_member(update.effective_user.id)
         if member.status not in [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.CREATOR]:
             await msg.edit_text("❌ Bu komutu sadece grup yöneticileri kullanabilir.")
             return
 
-        username = update.message.from_user.username.upper()  # Kullanıcı adı SKYxx
+        cmd = update.message.text.lower()
+        if not cmd.startswith("/kasa"):
+            await msg.edit_text("❌ Geçersiz komut.")
+            return
+
+        # SKY numarasını çıkar (/kasa02 → SKY02)
+        sky_number = cmd.replace("/kasa", "").zfill(2)
+        username = f"SKY{sky_number}".upper()
+
         if username not in USERS:
-            await msg.edit_text("❌ Bu kullanıcı için veri bulunamadı.")
+            await msg.edit_text(f"❌ {username} için veri bulunamadı.")
             return
 
         info = USERS[username]
@@ -147,7 +157,13 @@ if __name__ == "__main__":
 
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    app.add_handler(CommandHandler("kasa", kasa))
+    # /kasaXX komutlarını tek handler ile tüm SKY’lar için dinle
+    app.add_handler(CommandHandler(["kasa01","kasa02","kasa03","kasa04","kasa05",
+                                    "kasa06","kasa07","kasa08","kasa09","kasa10",
+                                    "kasa11","kasa12","kasa13","kasa14","kasa15",
+                                    "kasa16","kasa17","kasa18","kasa19","kasa20"], kasa))
+    # Daha fazla SKY varsa komutları artır veya regex ile dinleme yapılabilir
+
     app.add_handler(CommandHandler("gunceladres", gunceladres))
     app.add_handler(CommandHandler("gandalf", gandalf))
     app.add_handler(CommandHandler("esref", esref))
