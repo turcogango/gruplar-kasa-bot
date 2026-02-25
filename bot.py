@@ -5,12 +5,11 @@ from datetime import datetime, timedelta
 import os
 from telegram import Update, ChatMember
 from telegram.constants import ChatMemberStatus
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, filters
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 
 # ==============================
-# PANEL BİLGİLERİ ORTAM DEĞİŞKENLERİNDEN
+# PANEL BİLGİLERİ (RAILWAY ortam değişkenleri)
 # ==============================
-# Örn: PANEL1_URL, PANEL1_USER, PANEL1_PASS
 PANELS = {
     "panel1": {
         "url": os.environ.get("PANEL1_URL"),
@@ -94,14 +93,19 @@ async def fetch_user_amount(panel_config, user_uuid):
 async def kasa(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = await update.message.reply_text("⏳ Kasa verileri alınıyor...")
     try:
+        # Yöneticileri kontrol et
         member = await update.effective_chat.get_member(update.effective_user.id)
         if member.status not in [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.CREATOR]:
             await msg.edit_text("❌ Bu komutu sadece grup yöneticileri kullanabilir.")
             return
 
-        username = update.message.from_user.username.upper()  # SKYxx
+        # Hangi SKY olduğunu regex ile al
+        command = update.message.text.strip().lower()  # /kasa02 gibi
+        sky_num = command.replace("/kasa", "")  # "02"
+        username = f"SKY{sky_num}"
+
         if username not in USERS:
-            await msg.edit_text("❌ Bu kullanıcı için veri bulunamadı.")
+            await msg.edit_text(f"❌ {username} için veri bulunamadı.")
             return
 
         info = USERS[username]
@@ -147,10 +151,10 @@ if __name__ == "__main__":
 
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # Tüm /kasaXX komutlarını regex ile dinle
-    app.add_handler(CommandHandler(filters.Regex(r'^/kasa\d{2,}$'), kasa))
+    # /kasaXX için MessageHandler
+    app.add_handler(MessageHandler(filters.Regex(r'^/kasa\d{2,}$'), kasa))
 
-    # Diğer sabit komutlar
+    # Diğer komutlar
     app.add_handler(CommandHandler("gunceladres", gunceladres))
     app.add_handler(CommandHandler("gandalf", gandalf))
     app.add_handler(CommandHandler("esref", esref))
