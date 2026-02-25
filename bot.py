@@ -1,29 +1,30 @@
 import ssl
 import aiohttp
 import json
-import os
 from datetime import datetime, timedelta
-from telegram import Update, ChatMember, ChatMemberStatus
+import os
+from telegram import Update, ChatMember
+from telegram.constants import ChatMemberStatus
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 # ==============================
-# PANEL BİLGİLERİ (RAILWAY için env)
+# PANEL BİLGİLERİ (PC/RAILWAY için açık)
 # ==============================
 PANELS = {
     "panel1": {
-        "url": os.environ.get("PANEL1_URL"),
-        "username": os.environ.get("PANEL1_USER"),
-        "password": os.environ.get("PANEL1_PASS")
+        "url": "https://madrid.paneljaguar.com",
+        "username": "ALFI@123",
+        "password": "102030++"
     },
     "panel2": {
-        "url": os.environ.get("PANEL2_URL"),
-        "username": os.environ.get("PANEL2_USER"),
-        "password": os.environ.get("PANEL2_PASS")
+        "url": "https://berlin.tronpanel.com",
+        "username": "ALFI@12312",
+        "password": "102030++"
     }
 }
 
 # ==============================
-# USERS JSON DOSYASI
+# USERS JSON DOSYASINI YÜKLE
 # ==============================
 with open("users.json", "r", encoding="utf-8") as f:
     USERS = json.load(f)
@@ -39,7 +40,7 @@ def load_devirs():
         return {}
 
 # ==============================
-# PANELDEN KASA ÇEK
+# PANELDEN YATIRIM, ÇEKİM & TESLİMAT ÇEK
 # ==============================
 async def fetch_user_amount(panel_config, user_uuid):
     ssl_ctx = ssl.create_default_context()
@@ -87,21 +88,20 @@ async def fetch_user_amount(panel_config, user_uuid):
         return net
 
 # ==============================
-# /kasa KOMUTU (sadece kendi SKY ve yöneticiler)
+# /kasa KOMUTU (sadece yöneticiler)
 # ==============================
 async def kasa(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = await update.message.reply_text("⏳ Kasa verileri alınıyor...")
-
     try:
-        username = update.message.from_user.username.upper()  # SKYxx
-        if username not in USERS:
-            await msg.edit_text("❌ Bu kullanıcı için veri bulunamadı.")
+        # Sadece yönetici kontrolü
+        member = await update.effective_chat.get_member(update.effective_user.id)
+        if member.status not in [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.CREATOR]:
+            await msg.edit_text("❌ Bu komutu sadece grup yöneticileri kullanabilir.")
             return
 
-        # Yöneticilik kontrolü
-        chat_member = await context.bot.get_chat_member(update.effective_chat.id, update.effective_user.id)
-        if chat_member.status not in [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]:
-            await msg.edit_text("❌ Bu komutu sadece yöneticiler kullanabilir!")
+        username = update.message.from_user.username.upper()  # Kullanıcı adı SKYxx
+        if username not in USERS:
+            await msg.edit_text("❌ Bu kullanıcı için veri bulunamadı.")
             return
 
         info = USERS[username]
@@ -120,14 +120,20 @@ async def kasa(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.edit_text(f"❌ Hata oluştu:\n{e}")
 
 # ==============================
-# /gunceladres, /gandalf, /esref
+# /gunceladres
 # ==============================
 async def gunceladres(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("TSjQYavgJBGPr8iV3zH7qo1bx927qKVMwA")
 
+# ==============================
+# /gandalf
+# ==============================
 async def gandalf(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("👑👑👑👑")
 
+# ==============================
+# /esref
+# ==============================
 async def esref(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("👑👑👑👑")
 
@@ -135,17 +141,16 @@ async def esref(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # BOTU BAŞLAT
 # ==============================
 if __name__ == "__main__":
-    BOT_TOKEN = os.environ.get("BOT_TOKEN")
+    BOT_TOKEN = os.environ.get("BOT_TOKEN")  # Railway ortam değişkeni
     if not BOT_TOKEN:
         raise RuntimeError("BOT_TOKEN environment variable bulunamadı!")
 
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # Komutlar
     app.add_handler(CommandHandler("kasa", kasa))
     app.add_handler(CommandHandler("gunceladres", gunceladres))
     app.add_handler(CommandHandler("gandalf", gandalf))
     app.add_handler(CommandHandler("esref", esref))
 
-    print("Bot çalışıyor...")
+    print("Bot Railway üzerinde çalışıyor...")
     app.run_polling()
