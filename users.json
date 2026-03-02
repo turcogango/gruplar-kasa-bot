@@ -61,5 +61,9 @@
   "SKY61": {"panel": "panel2", "uuid": "38b4371e-7102-4a14-97e0-6fea46918057"},
   "SKY62": {"panel": "panel2", "uuid": "bcfe2ada-620b-4900-9f5a-cd78f24ac436"},
   "SKY63": {"panel": "panel2", "uuid": "3b36b55a-3b75-4198-96a6-fe8652d13820"},
-  "SKY64": {"panel": "panel2", "uuid": "411373a6-41e2-480f-9e9c-962722a915d8"}
+  "SKY64": {"panel": "panel2", "uuid": "411373a6-41e2-480f-9e9c-962722a915d8"},
+  "SKY65": {"panel": "panel2", "uuid": "28fd0795-b73a-4f1e-88af-28ef6482af5f"},
+  "SKY66": {"panel": "panel2", "uuid": "b6dae810-6e82-4639-801f-9ac667267b70"},
+  "SKY67": {"panel": "panel2", "uuid": "1bbcc54f-26a7-4768-bfb9-b213322ad858"}
+
 }
