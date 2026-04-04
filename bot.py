@@ -88,15 +88,19 @@ async def fetch_user_amount(panel_config, user_uuid):
         return net
 
 # ==============================
-# /kasaXX KOMUTU (sadece yöneticiler)
+# /kasaXX KOMUTU (sadece adminler)
 # ==============================
 async def kasa(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = await update.message.reply_text("⏳ Kasa verileri alınıyor...")
     try:
-        # Sadece yönetici kontrolü
-        member = await update.effective_chat.get_member(update.effective_user.id)
-        if member.status not in ["administrator", "creator"]:
-            await msg.edit_text("❌ Bu komutu sadece grup yöneticileri kullanabilir.")
+        # Admin ID'lerini environment variable'dan al
+        admin_ids = os.environ.get("ADMIN_IDS", "").split(",")
+        admin_ids = [int(admin_id.strip()) for admin_id in admin_ids]
+
+        # Eğer kullanıcı admin değilse
+        user_id = update.effective_user.id
+        if user_id not in admin_ids:
+            await msg.edit_text("❌ Bu komutu sadece adminler kullanabilir.")
             return
 
         # Hangi kasa komutu çalıştıysa onu yakala
