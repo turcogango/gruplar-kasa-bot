@@ -130,7 +130,7 @@ async def kasa(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # /gunceladres
 # ==============================
 async def gunceladres(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("TSjQYavgJBGPr8iV3zH7qo1bx927qKVMwA")
+    await update.message.reply_text("TDy4vHiBx9o6zwqD3TaCtSh3iioC6DUW1H")
 
 # ==============================
 # /gandalf
