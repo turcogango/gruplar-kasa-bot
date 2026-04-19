@@ -6,10 +6,6 @@ import os
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 
-# ==============================
-# PANEL BİLGİLERİ (RAILWAY için)
-# ==============================
-# Ortam değişkenlerinden okunuyor
 PANELS = {
     "panel1": {
         "url": os.environ.get("PANEL1_URL"),
@@ -23,25 +19,16 @@ PANELS = {
     }
 }
 
-# ==============================
-# USERS JSON DOSYASINI YÜKLE
-# ==============================
 with open("users.json", "r", encoding="utf-8") as f:
     USERS = json.load(f)
 
-# ==============================
-# DEVRİRES DOSYASINDAN OKUMA
-# ==============================
 def load_devirs():
     try:
         with open("devir.json", "r", encoding="utf-8") as f:
             return json.load(f)
-    except Exception:
+    except:
         return {}
 
-# ==============================
-# PANELDEN YATIRIM, ÇEKİM & TESLİMAT ÇEK
-# ==============================
 async def fetch_user_amount(panel_config, user_uuid):
     ssl_ctx = ssl.create_default_context()
     ssl_ctx.check_hostname = False
@@ -53,11 +40,13 @@ async def fetch_user_amount(panel_config, user_uuid):
     async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=ssl_ctx)) as session:
         async with session.get(login_url) as r:
             text = await r.text()
+
         token = ""
         for line in text.splitlines():
             if 'name="_token"' in line:
                 token = line.split('value="')[1].split('"')[0]
                 break
+
         await session.post(login_url, data={
             "_token": token,
             "email": panel_config['username'],
@@ -66,13 +55,15 @@ async def fetch_user_amount(panel_config, user_uuid):
 
         async with session.get(reports_url) as r:
             text = await r.text()
+
         csrf = ""
         for line in text.splitlines():
-            if 'name="csrf-token"' in line or 'meta name="csrf-token"' in line:
+            if 'csrf-token' in line:
                 csrf = line.split('content="')[1].split('"')[0]
                 break
 
         today = (datetime.utcnow() + timedelta(hours=3)).strftime("%Y-%m-%d")
+
         async with session.post(
             reports_url,
             headers={"X-CSRF-TOKEN": csrf, "Content-Type": "application/json"},
@@ -82,85 +73,84 @@ async def fetch_user_amount(panel_config, user_uuid):
 
         deposit_total = float(data.get("deposit", [0])[0] or 0)
         withdraw_total = float(data.get("withdraw", [0])[0] or 0)
-        delivery_total = float(data.get("delivery", [0,0])[1] or 0)
+        delivery_total = float(data.get("delivery", [0, 0])[1] or 0)
 
         net = deposit_total - withdraw_total - delivery_total
-        return net
 
-# ==============================
-# /kasaXX KOMUTU (sadece adminler)
-# ==============================
+        return deposit_total, withdraw_total, delivery_total, net
+
+
 async def kasa(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = await update.message.reply_text("⏳ Kasa verileri alınıyor...")
-    try:
-        # Admin ID'lerini environment variable'dan al
-        admin_ids = os.environ.get("ADMIN_IDS", "").split(",")
-        admin_ids = [int(admin_id.strip()) for admin_id in admin_ids]
+    msg = await update.message.reply_text("Kasa verileri alınıyor...")
 
-        # Eğer kullanıcı admin değilse
+    try:
+        admin_ids = os.environ.get("ADMIN_IDS", "").split(",")
+        admin_ids = [int(i.strip()) for i in admin_ids if i.strip()]
+
         user_id = update.effective_user.id
         if user_id not in admin_ids:
-            await msg.edit_text("❌ Bu komutu sadece adminler kullanabilir.")
+            await msg.edit_text("Bu komutu sadece adminler kullanabilir.")
             return
 
-        # Hangi kasa komutu çalıştıysa onu yakala
-        command = update.message.text.lstrip("/").upper()  # Örn: KASA02
-        username = command.replace("KASA", "SKY")           # Örn: SKY02
+        command = update.message.text.lstrip("/").upper()
+        username = command.replace("KASA", "SKY")
 
         if username not in USERS:
-            await msg.edit_text("❌ Bu kullanıcı için veri bulunamadı.")
+            await msg.edit_text("Kullanıcı bulunamadı.")
             return
+
+        def tr(x):
+            return f"{int(x):,}".replace(",", ".")
 
         info = USERS[username]
         panel = info["panel"]
         uuid = info["uuid"]
 
-        net = await fetch_user_amount(PANELS[panel], uuid)
+        deposit_total, withdraw_total, delivery_total, net = await fetch_user_amount(
+            PANELS[panel], uuid
+        )
+
         devirs = load_devirs()
         devir = float(devirs.get(username, 0))
-        total = net + devir
-        total_str = f"{int(total):,}".replace(",", ".") + " TL"
 
-        await msg.edit_text(f"💰 {username} KASA: {total_str}")
+        total = net + devir
+
+        await msg.edit_text(
+            f"{username} KASA\n"
+            f"Yatırım: {tr(deposit_total)} TL\n"
+            f"Çekim: {tr(withdraw_total)} TL\n"
+            f"Teslimat: {tr(delivery_total)} TL\n"
+            f"Net: {tr(net)} TL\n"
+            f"Devir: {tr(devir)} TL\n"
+            f"TOPLAM: {tr(total)} TL"
+        )
 
     except Exception as e:
-        await msg.edit_text(f"❌ Hata oluştu:\n{e}")
+        await msg.edit_text(f"Hata oluştu:\n{e}")
 
-# ==============================
-# /gunceladres
-# ==============================
+
 async def gunceladres(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("TDy4vHiBx9o6zwqD3TaCtSh3iioC6DUW1H")
 
-# ==============================
-# /gandalf
-# ==============================
+
 async def gandalf(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👑👑👑👑")
+    await update.message.reply_text("")
 
-# ==============================
-# /esref
-# ==============================
+
 async def esref(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👑👑👑👑")
+    await update.message.reply_text("")
 
-# ==============================
-# BOTU BAŞLAT
-# ==============================
+
 if __name__ == "__main__":
-    BOT_TOKEN = os.environ.get("BOT_TOKEN")  # Railway ortam değişkeni
+    BOT_TOKEN = os.environ.get("BOT_TOKEN")
     if not BOT_TOKEN:
-        raise RuntimeError("BOT_TOKEN environment variable bulunamadı!")
+        raise RuntimeError("BOT_TOKEN bulunamadı")
 
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # /kasaXX komutlarını tek handler ile tüm SKY’lar için dinle
-    app.add_handler(MessageHandler(filters.Regex(r'^/kasa\d{2,}$'), kasa))
-
-    # Diğer komutlar
+    app.add_handler(MessageHandler(filters.Regex(r'^/kasa\d+$'), kasa))
     app.add_handler(CommandHandler("gunceladres", gunceladres))
     app.add_handler(CommandHandler("gandalf", gandalf))
     app.add_handler(CommandHandler("esref", esref))
 
-    print("Bot Railway üzerinde çalışıyor...")
     app.run_polling()
