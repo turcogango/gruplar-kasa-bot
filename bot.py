@@ -75,9 +75,7 @@ async def fetch_user_amount(panel_config, user_uuid):
         withdraw_total = float(data.get("withdraw", [0])[0] or 0)
         delivery_total = float(data.get("delivery", [0, 0])[1] or 0)
 
-        net = deposit_total - withdraw_total - delivery_total
-
-        return deposit_total, withdraw_total, delivery_total, net
+        return deposit_total, withdraw_total, delivery_total
 
 
 async def kasa(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -106,9 +104,15 @@ async def kasa(update: Update, context: ContextTypes.DEFAULT_TYPE):
         panel = info["panel"]
         uuid = info["uuid"]
 
-        deposit_total, withdraw_total, delivery_total, net = await fetch_user_amount(
+        deposit_total, withdraw_total, delivery_total = await fetch_user_amount(
             PANELS[panel], uuid
         )
+
+        # KOMİSYON %2.5
+        commission = deposit_total * 0.025
+
+        # NET HESAP (komisyon düşülmüş)
+        net = deposit_total - withdraw_total - delivery_total - commission
 
         devirs = load_devirs()
         devir = float(devirs.get(username, 0))
@@ -120,6 +124,7 @@ async def kasa(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Yatırım: {tr(deposit_total)} TL\n"
             f"Çekim: {tr(withdraw_total)} TL\n"
             f"Teslimat: {tr(delivery_total)} TL\n"
+            f"Komisyon (%2.5): {tr(commission)} TL\n"
             f"Net: {tr(net)} TL\n"
             f"Devir: {tr(devir)} TL\n"
             f"TOPLAM: {tr(total)} TL"
