@@ -147,7 +147,7 @@ async def arafat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("👑🚬KUBAN👑🚬")
 
 
-async def atfalcon(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def haspo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🐴🐴🐴🐴")
 
 
@@ -163,6 +163,6 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("gandalf", gandalf))
     app.add_handler(CommandHandler("esref", esref))
     app.add_handler(CommandHandler("arafat", arafat))
-    app.add_handler(CommandHandler("atfalcon", atfalcon))
+    app.add_handler(CommandHandler("haspo", haspo))
 
     app.run_polling()
