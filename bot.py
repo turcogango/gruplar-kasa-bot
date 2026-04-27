@@ -108,10 +108,7 @@ async def kasa(update: Update, context: ContextTypes.DEFAULT_TYPE):
             PANELS[panel], uuid
         )
 
-        # KOMİSYON %2.5
         commission = deposit_total * 0.025
-
-        # NET HESAP (komisyon düşülmüş)
         net = deposit_total - withdraw_total - delivery_total - commission
 
         devirs = load_devirs()
@@ -146,6 +143,10 @@ async def esref(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("👑👑👑👑")
 
 
+async def arafat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("👑🥬👑🥬👑🥬")
+
+
 if __name__ == "__main__":
     BOT_TOKEN = os.environ.get("BOT_TOKEN")
     if not BOT_TOKEN:
@@ -157,5 +158,6 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("gunceladres", gunceladres))
     app.add_handler(CommandHandler("gandalf", gandalf))
     app.add_handler(CommandHandler("esref", esref))
+    app.add_handler(CommandHandler("arafat", arafat))
 
     app.run_polling()
