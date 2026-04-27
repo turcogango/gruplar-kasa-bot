@@ -144,7 +144,7 @@ async def esref(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def arafat(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👑🥬👑🥬👑🥬")
+    await update.message.reply_text("👑🚬KUBAN👑🚬")
 
 
 if __name__ == "__main__":
