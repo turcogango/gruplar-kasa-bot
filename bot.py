@@ -148,7 +148,7 @@ async def arafat(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def sansa(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("eşref arıyor hemen gelicem")
+    await update.message.reply_text("👸👸👸👸")
 
 
 if __name__ == "__main__":
