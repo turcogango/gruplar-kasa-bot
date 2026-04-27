@@ -147,11 +147,8 @@ async def arafat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("👑🚬KUBAN👑🚬")
 
 
-async def neo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(CUBURCAN)
-
 async def sansa(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(eşref arıyor hemen geliyorum)
+    await update.message.reply_text("eşref arıyor hemen gelicem")
 
 
 if __name__ == "__main__":
@@ -166,7 +163,6 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("gandalf", gandalf))
     app.add_handler(CommandHandler("esref", esref))
     app.add_handler(CommandHandler("arafat", arafat))
-     app.add_handler(CommandHandler("sansa", sansa))
-    app.add_handler(CommandHandler("neo", neo))
+    app.add_handler(CommandHandler("sansa", sansa))
 
     app.run_polling()
