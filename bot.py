@@ -183,7 +183,7 @@ async def forward_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     grup_adi = message.chat.title or "Bilinmeyen Grup"
     gonderen = message.from_user.first_name or "Anonim"
 
-    ust_bilgi = f" TAŞERON: {grup_adi}\n👤 Gönderen: {gonderen}\n\n"
+    ust_bilgi = f" 💰 TAŞERON: {grup_adi}\n👤 Gönderen: {gonderen}\n\n"
 
     for hedef in HEDEF_GRUPLAR:
         try:
