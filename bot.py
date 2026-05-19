@@ -147,7 +147,7 @@ async def kasa(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ---------------- SIMPLE COMMANDS ---------------- #
 
 async def gunceladres(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("TDy4vHiBx9o6zwqD3TaCtSh3iioC6DUW1H")
+    await update.message.reply_text("TJ6mjSosVAEB4Ygh1LhQ4BkaFpea96Znmf")
 
 async def gandalf(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("👑👑👑👑")
