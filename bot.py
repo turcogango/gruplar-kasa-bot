@@ -40,31 +40,28 @@ def load_devirs():
     except:
         return {}
 
-# ================= SKY HELPER ================= #
-
-def get_sky_by_number(number: str):
-    return USERS.get(f"SKY{number}")
+# ================= SKY SYSTEM ================= #
 
 def is_admin(user_id: int):
     admin_ids = os.environ.get("ADMIN_IDS", "").split(",")
     admin_ids = [int(i.strip()) for i in admin_ids if i.strip()]
     return user_id in admin_ids
 
-# ================= AKTİF / PASİF ================= #
 
-async def aktif(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def extract_number(text: str):
+    return text.replace("/aktifSKY", "").replace("/pasifSKY", "")
+
+
+async def aktif_sky(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         if not is_admin(update.effective_user.id):
             await update.message.reply_text("❌ Sadece admin kullanabilir")
             return
 
-        if not context.args:
-            await update.message.reply_text("Kullanım: /aktif 36")
-            return
+        number = extract_number(update.message.text)
+        key = f"SKY{number}"
 
-        number = context.args[0]
-        user = get_sky_by_number(number)
-
+        user = USERS.get(key)
         if not user:
             await update.message.reply_text("❌ Kullanıcı bulunamadı")
             return
@@ -77,25 +74,22 @@ async def aktif(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         db.commit()
 
-        await update.message.reply_text(f"✅ SKY{number} AKTİF")
+        await update.message.reply_text(f"✅ {key} AKTİF")
 
     except Exception as e:
         await update.message.reply_text(f"Hata: {e}")
 
 
-async def pasif(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def pasif_sky(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         if not is_admin(update.effective_user.id):
             await update.message.reply_text("❌ Sadece admin kullanabilir")
             return
 
-        if not context.args:
-            await update.message.reply_text("Kullanım: /pasif 36")
-            return
+        number = extract_number(update.message.text)
+        key = f"SKY{number}"
 
-        number = context.args[0]
-        user = get_sky_by_number(number)
-
+        user = USERS.get(key)
         if not user:
             await update.message.reply_text("❌ Kullanıcı bulunamadı")
             return
@@ -108,7 +102,7 @@ async def pasif(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         db.commit()
 
-        await update.message.reply_text(f"❌ SKY{number} PASİF")
+        await update.message.reply_text(f"❌ {key} PASİF")
 
     except Exception as e:
         await update.message.reply_text(f"Hata: {e}")
@@ -274,8 +268,8 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("sansa", sansa))
 
     # SKY SYSTEM
-    app.add_handler(CommandHandler("aktif", aktif))
-    app.add_handler(CommandHandler("pasif", pasif))
+    app.add_handler(MessageHandler(filters.Regex(r'^/aktifSKY\d+$'), aktif_sky))
+    app.add_handler(MessageHandler(filters.Regex(r'^/pasifSKY\d+$'), pasif_sky))
 
     app.add_handler(MessageHandler(filters.ALL, forward_handler))
 
