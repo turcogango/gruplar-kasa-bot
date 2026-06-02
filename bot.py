@@ -2,8 +2,8 @@ import ssl
 import aiohttp
 import json
 import re
-from datetime import datetime, timedelta
 import os
+from datetime import datetime, timedelta
 
 from telegram import Update
 from telegram.ext import (
@@ -14,7 +14,23 @@ from telegram.ext import (
     ContextTypes
 )
 
-# ---------------- PANEL CONFIG ---------------- #
+# ---------------- USERS ---------------- #
+
+with open("users.json", "r", encoding="utf-8") as f:
+    USERS = json.load(f)
+
+def save_users():
+    with open("users.json", "w", encoding="utf-8") as f:
+        json.dump(USERS, f, indent=4, ensure_ascii=False)
+
+# ---------------- ADMIN ---------------- #
+
+def is_admin(user_id: int):
+    admin_ids = os.environ.get("ADMIN_IDS", "").split(",")
+    admin_ids = [int(i.strip()) for i in admin_ids if i.strip()]
+    return user_id in admin_ids
+
+# ---------------- PANEL ---------------- #
 
 PANELS = {
     "panel1": {
@@ -29,98 +45,24 @@ PANELS = {
     }
 }
 
-# ---------------- USERS ---------------- #
-
-with open("users.json", "r", encoding="utf-8") as f:
-    USERS = json.load(f)
-
-def save_users():
-    with open("users.json", "w", encoding="utf-8") as f:
-        json.dump(USERS, f, indent=4, ensure_ascii=False)
-
-def load_devirs():
-    try:
-        with open("devir.json", "r", encoding="utf-8") as f:
-            return json.load(f)
-    except:
-        return {}
-
-# ---------------- ADMIN ---------------- #
-
-def is_admin(user_id: int):
-    admin_ids = os.environ.get("ADMIN_IDS", "").split(",")
-    admin_ids = [int(i.strip()) for i in admin_ids if i.strip()]
-    return user_id in admin_ids
-
-# ---------------- NUMBER PARSER ---------------- #
+# ---------------- NUMBER ---------------- #
 
 def extract_number(text: str):
-    match = re.search(r'(\d+)', text)
-    return match.group(1) if match else None
+    m = re.search(r'(\d+)', text)
+    return m.group(1) if m else None
 
-# ---------------- SKY SYSTEM ---------------- #
+# ---------------- PANEL UPDATE (CRITICAL FIX) ---------------- #
 
-async def aktif_sky(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        if not is_admin(update.effective_user.id):
-            await update.message.reply_text("❌ Sadece admin")
-            return
-
-        num = extract_number(update.message.text)
-        if not num:
-            await update.message.reply_text("❌ Numara yok")
-            return
-
-        key = f"SKY{num}"
-
-        if key not in USERS:
-            await update.message.reply_text("❌ Kullanıcı yok")
-            return
-
-        USERS[key]["havale_alim"] = 1
-        save_users()
-
-        await update.message.reply_text(f"✅ {key} AKTİF")
-
-    except Exception as e:
-        await update.message.reply_text(f"Hata: {e}")
-
-async def pasif_sky(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        if not is_admin(update.effective_user.id):
-            await update.message.reply_text("❌ Sadece admin")
-            return
-
-        num = extract_number(update.message.text)
-        if not num:
-            await update.message.reply_text("❌ Numara yok")
-            return
-
-        key = f"SKY{num}"
-
-        if key not in USERS:
-            await update.message.reply_text("❌ Kullanıcı yok")
-            return
-
-        USERS[key]["havale_alim"] = 0
-        save_users()
-
-        await update.message.reply_text(f"❌ {key} PASİF")
-
-    except Exception as e:
-        await update.message.reply_text(f"Hata: {e}")
-
-# ---------------- PANEL FETCH ---------------- #
-
-async def fetch_user_amount(panel_config, user_uuid):
+async def update_havale(panel_config, uuid, value):
     ssl_ctx = ssl.create_default_context()
     ssl_ctx.check_hostname = False
     ssl_ctx.verify_mode = ssl.CERT_NONE
 
     login_url = f"{panel_config['url']}/login"
-    reports_url = f"{panel_config['url']}/reports/quickly"
 
     async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=ssl_ctx)) as session:
+
+        # LOGIN PAGE
         async with session.get(login_url) as r:
             text = await r.text()
 
@@ -130,108 +72,101 @@ async def fetch_user_amount(panel_config, user_uuid):
                 token = line.split('value="')[1].split('"')[0]
                 break
 
+        # LOGIN
         await session.post(login_url, data={
             "_token": token,
-            "email": panel_config['username'],
-            "password": panel_config['password']
+            "email": panel_config["username"],
+            "password": panel_config["password"]
         })
 
-        async with session.get(reports_url) as r:
-            text = await r.text()
+        # EDIT PAGE
+        edit_url = f"{panel_config['url']}/users/{uuid}/edit"
+
+        async with session.get(edit_url) as r:
+            page = await r.text()
 
         csrf = ""
-        for line in text.splitlines():
+        for line in page.splitlines():
             if 'csrf-token' in line:
                 csrf = line.split('content="')[1].split('"')[0]
                 break
 
-        today = (datetime.utcnow() + timedelta(hours=3)).strftime("%Y-%m-%d")
+        # UPDATE POST
+        await session.post(edit_url, data={
+            "_token": csrf,
+            "havale_alim": str(value)
+        })
 
-        async with session.post(
-            reports_url,
-            headers={"X-CSRF-TOKEN": csrf, "Content-Type": "application/json"},
-            json={"site": "", "dateone": today, "datetwo": today, "bank": "", "user": user_uuid}
-        ) as r:
-            data = await r.json()
+# ---------------- SKY AKTİF ---------------- #
 
-        return (
-            float(data.get("deposit", [0])[0] or 0),
-            float(data.get("withdraw", [0])[0] or 0),
-            float(data.get("delivery", [0, 0])[1] or 0)
-        )
-
-# ---------------- KASA ---------------- #
-
-async def kasa(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = await update.message.reply_text("Yükleniyor...")
-
+async def aktif_sky(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        command = update.message.text.lstrip("/").upper()
-        username = command.replace("KASA", "SKY")
-
-        if username not in USERS:
-            await msg.edit_text("Kullanıcı yok")
+        if not is_admin(update.effective_user.id):
+            await update.message.reply_text("❌ Admin değil")
             return
 
-        def tr(x): return f"{int(x):,}".replace(",", ".")
+        num = extract_number(update.message.text)
+        if not num:
+            await update.message.reply_text("❌ Numara yok")
+            return
 
-        info = USERS[username]
+        key = f"SKY{num}"
 
-        dep, wd, dlv = await fetch_user_amount(PANELS[info["panel"]], info["uuid"])
+        if key not in USERS:
+            await update.message.reply_text("❌ Kullanıcı yok")
+            return
 
-        commission = dep * 0.025
-        net = dep - wd - dlv - commission
+        info = USERS[key]
 
-        devirs = load_devirs()
-        devir = float(devirs.get(username, 0))
+        # JSON update
+        USERS[key]["havale_alim"] = 1
+        save_users()
 
-        total = net + devir
+        # PANEL update
+        await update_havale(PANELS[info["panel"]], info["uuid"], 1)
 
-        await msg.edit_text(
-            f"{username} KASA\n"
-            f"Yatırım: {tr(dep)}\n"
-            f"Çekim: {tr(wd)}\n"
-            f"Teslimat: {tr(dlv)}\n"
-            f"Komisyon: {tr(commission)}\n"
-            f"Net: {tr(net)}\n"
-            f"Devir: {tr(devir)}\n"
-            f"TOPLAM: {tr(total)}"
-        )
+        await update.message.reply_text(f"✅ {key} AKTİF")
 
     except Exception as e:
-        await msg.edit_text(f"Hata: {e}")
+        await update.message.reply_text(f"Hata: {e}")
 
-# ---------------- SIMPLE ---------------- #
+# ---------------- SKY PASİF ---------------- #
 
-async def gunceladres(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("OK")
+async def pasif_sky(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        if not is_admin(update.effective_user.id):
+            await update.message.reply_text("❌ Admin değil")
+            return
 
-# ---------------- FORWARD ---------------- #
+        num = extract_number(update.message.text)
+        if not num:
+            await update.message.reply_text("❌ Numara yok")
+            return
 
-BOT_USERNAME = os.environ.get("BOT_USERNAME")
+        key = f"SKY{num}"
 
-HEDEF_GRUPLAR = [
-    int(x) for x in os.environ.get("TARGET_GROUPS", "").split(",") if x.strip()
-]
+        if key not in USERS:
+            await update.message.reply_text("❌ Kullanıcı yok")
+            return
 
-async def forward_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = update.message
-    if not msg:
-        return
+        info = USERS[key]
 
-    text = msg.text or msg.caption or ""
+        # JSON update
+        USERS[key]["havale_alim"] = 0
+        save_users()
 
-    if not BOT_USERNAME or BOT_USERNAME.lower() not in text.lower():
-        return
+        # PANEL update
+        await update_havale(PANELS[info["panel"]], info["uuid"], 0)
 
-    for hedef in HEDEF_GRUPLAR:
-        try:
-            if msg.text:
-                await context.bot.send_message(hedef, msg.text)
-            else:
-                await context.bot.copy_message(hedef, msg.chat_id, msg.message_id)
-        except:
-            pass
+        await update.message.reply_text(f"❌ {key} PASİF")
+
+    except Exception as e:
+        await update.message.reply_text(f"Hata: {e}")
+
+# ---------------- BOT ---------------- #
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Bot aktif")
 
 # ---------------- MAIN ---------------- #
 
@@ -240,15 +175,9 @@ if __name__ == "__main__":
 
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # kasa
-    app.add_handler(MessageHandler(filters.Regex(r'^/kasa\d+$'), kasa))
-
-    # aktif pasif (HER FORMAT)
+    # commands
     app.add_handler(MessageHandler(filters.Regex(r'^/aktif'), aktif_sky))
     app.add_handler(MessageHandler(filters.Regex(r'^/pasif'), pasif_sky))
-
-    app.add_handler(CommandHandler("gunceladres", gunceladres))
-
-    app.add_handler(MessageHandler(filters.ALL, forward_handler))
+    app.add_handler(CommandHandler("start", start))
 
     app.run_polling(drop_pending_updates=True)
