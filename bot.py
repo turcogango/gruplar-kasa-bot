@@ -43,16 +43,16 @@ PANELS = {
     }
 }
 
-# ---------------- PARSE SKY ---------------- #
+# ---------------- USER PARSE ---------------- #
 
 def parse_user(text):
     text = text.upper().replace("/", "")
     text = text.replace("AKTIF", "").replace("PASIF", "")
     text = text.replace("SKY", "")
-    num = re.search(r"\d+", text)
-    return num.group() if num else None
+    m = re.search(r"\d+", text)
+    return m.group() if m else None
 
-# ---------------- PANEL LOGIN + UPDATE ---------------- #
+# ---------------- 🔥 FIXED PANEL UPDATE ---------------- #
 
 async def update_panel(panel, uuid, value):
     ssl_ctx = ssl.create_default_context()
@@ -61,9 +61,11 @@ async def update_panel(panel, uuid, value):
 
     base = panel["url"]
 
-    async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=ssl_ctx)) as session:
+    cookie_jar = aiohttp.CookieJar()  # 🔥 KRİTİK FIX
 
-        # LOGIN
+    async with aiohttp.ClientSession(cookie_jar=cookie_jar, connector=aiohttp.TCPConnector(ssl=ssl_ctx)) as session:
+
+        # LOGIN PAGE
         async with session.get(f"{base}/login") as r:
             html = await r.text()
 
@@ -73,13 +75,22 @@ async def update_panel(panel, uuid, value):
                 token = line.split('value="')[1].split('"')[0]
                 break
 
+        # LOGIN
         await session.post(f"{base}/login", data={
             "_token": token,
             "email": panel["username"],
             "password": panel["password"]
         })
 
-        # PATCH UPDATE
+        # VERIFY SESSION
+        async with session.get(f"{base}/users") as r:
+            check = await r.text()
+
+        if "logout" not in check.lower():
+            print("LOGIN FAILED")
+            return
+
+        # UPDATE USER (PATCH FORM)
         url = f"{base}/users/{uuid}"
 
         await session.post(url, data={
@@ -88,7 +99,7 @@ async def update_panel(panel, uuid, value):
             "havale_alim": str(value)
         })
 
-# ---------------- COMMAND HANDLER ---------------- #
+# ---------------- MAIN COMMAND ---------------- #
 
 async def aktif_pasif(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -108,7 +119,7 @@ async def aktif_pasif(update: Update, context: ContextTypes.DEFAULT_TYPE):
         key = f"SKY{num}"
 
         if key not in USERS:
-            await update.message.reply_text("❌ SKY kullanıcı yok")
+            await update.message.reply_text("❌ USER yok")
             return
 
         user = USERS[key]
@@ -120,18 +131,21 @@ async def aktif_pasif(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # PANEL update
         await update_panel(PANELS[user["panel"]], user["uuid"], value)
 
-        await update.message.reply_text(f"✅ {key} {'AKTİF' if value==1 else 'PASİF'}")
+        await update.message.reply_text(
+            f"✅ {key} {'AKTİF' if value == 1 else 'PASİF'}"
+        )
 
     except Exception as e:
         await update.message.reply_text(f"Hata: {e}")
 
-# ---------------- MAIN ---------------- #
+# ---------------- BOT ---------------- #
 
 if __name__ == "__main__":
     BOT_TOKEN = os.environ.get("BOT_TOKEN")
 
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
+    # sadece aktif/pasif sistemi
     app.add_handler(MessageHandler(filters.Regex(r'^(\/)?(aktif|pasif)'), aktif_pasif))
 
     app.run_polling(drop_pending_updates=True)
