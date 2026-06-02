@@ -33,6 +33,10 @@ PANELS = {
 with open("users.json", "r", encoding="utf-8") as f:
     USERS = json.load(f)
 
+def save_users():
+    with open("users.json", "w", encoding="utf-8") as f:
+        json.dump(USERS, f, indent=4, ensure_ascii=False)
+
 def load_devirs():
     try:
         with open("devir.json", "r", encoding="utf-8") as f:
@@ -40,17 +44,19 @@ def load_devirs():
     except:
         return {}
 
-# ================= SKY SYSTEM ================= #
+# ---------------- ADMIN ---------------- #
 
 def is_admin(user_id: int):
     admin_ids = os.environ.get("ADMIN_IDS", "").split(",")
     admin_ids = [int(i.strip()) for i in admin_ids if i.strip()]
     return user_id in admin_ids
 
+# ---------------- SKY HELP ---------------- #
 
 def extract_number(text: str):
     return text.replace("/aktifSKY", "").replace("/pasifSKY", "")
 
+# ---------------- SKY AKTİF ---------------- #
 
 async def aktif_sky(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -61,24 +67,19 @@ async def aktif_sky(update: Update, context: ContextTypes.DEFAULT_TYPE):
         number = extract_number(update.message.text)
         key = f"SKY{number}"
 
-        user = USERS.get(key)
-        if not user:
+        if key not in USERS:
             await update.message.reply_text("❌ Kullanıcı bulunamadı")
             return
 
-        uuid = user["uuid"]
-
-        cursor.execute(
-            "UPDATE users SET havale_alim = 1 WHERE userid = %s",
-            (uuid,)
-        )
-        db.commit()
+        USERS[key]["havale_alim"] = 1
+        save_users()
 
         await update.message.reply_text(f"✅ {key} AKTİF")
 
     except Exception as e:
         await update.message.reply_text(f"Hata: {e}")
 
+# ---------------- SKY PASİF ---------------- #
 
 async def pasif_sky(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -89,18 +90,12 @@ async def pasif_sky(update: Update, context: ContextTypes.DEFAULT_TYPE):
         number = extract_number(update.message.text)
         key = f"SKY{number}"
 
-        user = USERS.get(key)
-        if not user:
+        if key not in USERS:
             await update.message.reply_text("❌ Kullanıcı bulunamadı")
             return
 
-        uuid = user["uuid"]
-
-        cursor.execute(
-            "UPDATE users SET havale_alim = 0 WHERE userid = %s",
-            (uuid,)
-        )
-        db.commit()
+        USERS[key]["havale_alim"] = 0
+        save_users()
 
         await update.message.reply_text(f"❌ {key} PASİF")
 
