@@ -3,13 +3,12 @@ import aiohttp
 import json
 import re
 import os
-from datetime import datetime, timedelta
 
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
-    CommandHandler,
     MessageHandler,
+    CommandHandler,
     filters,
     ContextTypes
 )
@@ -25,10 +24,9 @@ def save_users():
 
 # ---------------- ADMIN ---------------- #
 
-def is_admin(user_id: int):
+def is_admin(user_id):
     admin_ids = os.environ.get("ADMIN_IDS", "").split(",")
-    admin_ids = [int(i.strip()) for i in admin_ids if i.strip()]
-    return user_id in admin_ids
+    return str(user_id) in admin_ids
 
 # ---------------- PANEL ---------------- #
 
@@ -45,128 +43,87 @@ PANELS = {
     }
 }
 
-# ---------------- NUMBER ---------------- #
+# ---------------- PARSE SKY ---------------- #
 
-def extract_number(text: str):
-    m = re.search(r'(\d+)', text)
-    return m.group(1) if m else None
+def parse_user(text):
+    text = text.upper().replace("/", "")
+    text = text.replace("AKTIF", "").replace("PASIF", "")
+    text = text.replace("SKY", "")
+    num = re.search(r"\d+", text)
+    return num.group() if num else None
 
-# ---------------- PANEL UPDATE (CRITICAL FIX) ---------------- #
+# ---------------- PANEL LOGIN + UPDATE ---------------- #
 
-async def update_havale(panel_config, uuid, value):
+async def update_panel(panel, uuid, value):
     ssl_ctx = ssl.create_default_context()
     ssl_ctx.check_hostname = False
     ssl_ctx.verify_mode = ssl.CERT_NONE
 
-    login_url = f"{panel_config['url']}/login"
+    base = panel["url"]
 
     async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=ssl_ctx)) as session:
 
-        # LOGIN PAGE
-        async with session.get(login_url) as r:
-            text = await r.text()
+        # LOGIN
+        async with session.get(f"{base}/login") as r:
+            html = await r.text()
 
         token = ""
-        for line in text.splitlines():
+        for line in html.splitlines():
             if 'name="_token"' in line:
                 token = line.split('value="')[1].split('"')[0]
                 break
 
-        # LOGIN
-        await session.post(login_url, data={
+        await session.post(f"{base}/login", data={
             "_token": token,
-            "email": panel_config["username"],
-            "password": panel_config["password"]
+            "email": panel["username"],
+            "password": panel["password"]
         })
 
-        # EDIT PAGE
-        edit_url = f"{panel_config['url']}/users/{uuid}/edit"
+        # PATCH UPDATE
+        url = f"{base}/users/{uuid}"
 
-        async with session.get(edit_url) as r:
-            page = await r.text()
-
-        csrf = ""
-        for line in page.splitlines():
-            if 'csrf-token' in line:
-                csrf = line.split('content="')[1].split('"')[0]
-                break
-
-        # UPDATE POST
-        await session.post(edit_url, data={
-            "_token": csrf,
+        await session.post(url, data={
+            "_method": "PATCH",
+            "_token": token,
             "havale_alim": str(value)
         })
 
-# ---------------- SKY AKTİF ---------------- #
+# ---------------- COMMAND HANDLER ---------------- #
 
-async def aktif_sky(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def aktif_pasif(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         if not is_admin(update.effective_user.id):
             await update.message.reply_text("❌ Admin değil")
             return
 
-        num = extract_number(update.message.text)
+        text = update.message.text.upper()
+
+        value = 1 if "AKTIF" in text else 0
+
+        num = parse_user(text)
         if not num:
-            await update.message.reply_text("❌ Numara yok")
+            await update.message.reply_text("❌ Kullanıcı bulunamadı")
             return
 
         key = f"SKY{num}"
 
         if key not in USERS:
-            await update.message.reply_text("❌ Kullanıcı yok")
+            await update.message.reply_text("❌ SKY kullanıcı yok")
             return
 
-        info = USERS[key]
+        user = USERS[key]
 
         # JSON update
-        USERS[key]["havale_alim"] = 1
+        USERS[key]["havale_alim"] = value
         save_users()
 
         # PANEL update
-        await update_havale(PANELS[info["panel"]], info["uuid"], 1)
+        await update_panel(PANELS[user["panel"]], user["uuid"], value)
 
-        await update.message.reply_text(f"✅ {key} AKTİF")
-
-    except Exception as e:
-        await update.message.reply_text(f"Hata: {e}")
-
-# ---------------- SKY PASİF ---------------- #
-
-async def pasif_sky(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        if not is_admin(update.effective_user.id):
-            await update.message.reply_text("❌ Admin değil")
-            return
-
-        num = extract_number(update.message.text)
-        if not num:
-            await update.message.reply_text("❌ Numara yok")
-            return
-
-        key = f"SKY{num}"
-
-        if key not in USERS:
-            await update.message.reply_text("❌ Kullanıcı yok")
-            return
-
-        info = USERS[key]
-
-        # JSON update
-        USERS[key]["havale_alim"] = 0
-        save_users()
-
-        # PANEL update
-        await update_havale(PANELS[info["panel"]], info["uuid"], 0)
-
-        await update.message.reply_text(f"❌ {key} PASİF")
+        await update.message.reply_text(f"✅ {key} {'AKTİF' if value==1 else 'PASİF'}")
 
     except Exception as e:
         await update.message.reply_text(f"Hata: {e}")
-
-# ---------------- BOT ---------------- #
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Bot aktif")
 
 # ---------------- MAIN ---------------- #
 
@@ -175,9 +132,6 @@ if __name__ == "__main__":
 
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # commands
-    app.add_handler(MessageHandler(filters.Regex(r'^/aktif'), aktif_sky))
-    app.add_handler(MessageHandler(filters.Regex(r'^/pasif'), pasif_sky))
-    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.Regex(r'^(\/)?(aktif|pasif)'), aktif_pasif))
 
     app.run_polling(drop_pending_updates=True)
