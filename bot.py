@@ -1,6 +1,7 @@
 import ssl
 import aiohttp
 import json
+import re
 from datetime import datetime, timedelta
 import os
 
@@ -51,24 +52,29 @@ def is_admin(user_id: int):
     admin_ids = [int(i.strip()) for i in admin_ids if i.strip()]
     return user_id in admin_ids
 
-# ---------------- SKY HELP ---------------- #
+# ---------------- NUMBER PARSER ---------------- #
 
 def extract_number(text: str):
-    return text.replace("/aktifSKY", "").replace("/pasifSKY", "")
+    match = re.search(r'(\d+)', text)
+    return match.group(1) if match else None
 
-# ---------------- SKY AKTİF ---------------- #
+# ---------------- SKY SYSTEM ---------------- #
 
 async def aktif_sky(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         if not is_admin(update.effective_user.id):
-            await update.message.reply_text("❌ Sadece admin kullanabilir")
+            await update.message.reply_text("❌ Sadece admin")
             return
 
-        number = extract_number(update.message.text)
-        key = f"SKY{number}"
+        num = extract_number(update.message.text)
+        if not num:
+            await update.message.reply_text("❌ Numara yok")
+            return
+
+        key = f"SKY{num}"
 
         if key not in USERS:
-            await update.message.reply_text("❌ Kullanıcı bulunamadı")
+            await update.message.reply_text("❌ Kullanıcı yok")
             return
 
         USERS[key]["havale_alim"] = 1
@@ -79,19 +85,21 @@ async def aktif_sky(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"Hata: {e}")
 
-# ---------------- SKY PASİF ---------------- #
-
 async def pasif_sky(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         if not is_admin(update.effective_user.id):
-            await update.message.reply_text("❌ Sadece admin kullanabilir")
+            await update.message.reply_text("❌ Sadece admin")
             return
 
-        number = extract_number(update.message.text)
-        key = f"SKY{number}"
+        num = extract_number(update.message.text)
+        if not num:
+            await update.message.reply_text("❌ Numara yok")
+            return
+
+        key = f"SKY{num}"
 
         if key not in USERS:
-            await update.message.reply_text("❌ Kullanıcı bulunamadı")
+            await update.message.reply_text("❌ Kullanıcı yok")
             return
 
         USERS[key]["havale_alim"] = 0
@@ -146,38 +154,33 @@ async def fetch_user_amount(panel_config, user_uuid):
         ) as r:
             data = await r.json()
 
-        deposit_total = float(data.get("deposit", [0])[0] or 0)
-        withdraw_total = float(data.get("withdraw", [0])[0] or 0)
-        delivery_total = float(data.get("delivery", [0, 0])[1] or 0)
-
-        return deposit_total, withdraw_total, delivery_total
+        return (
+            float(data.get("deposit", [0])[0] or 0),
+            float(data.get("withdraw", [0])[0] or 0),
+            float(data.get("delivery", [0, 0])[1] or 0)
+        )
 
 # ---------------- KASA ---------------- #
 
 async def kasa(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = await update.message.reply_text("Kasa verileri alınıyor...")
+    msg = await update.message.reply_text("Yükleniyor...")
 
     try:
         command = update.message.text.lstrip("/").upper()
         username = command.replace("KASA", "SKY")
 
         if username not in USERS:
-            await msg.edit_text("Kullanıcı bulunamadı")
+            await msg.edit_text("Kullanıcı yok")
             return
 
-        def tr(x):
-            return f"{int(x):,}".replace(",", ".")
+        def tr(x): return f"{int(x):,}".replace(",", ".")
 
         info = USERS[username]
-        panel = info["panel"]
-        uuid = info["uuid"]
 
-        deposit_total, withdraw_total, delivery_total = await fetch_user_amount(
-            PANELS[panel], uuid
-        )
+        dep, wd, dlv = await fetch_user_amount(PANELS[info["panel"]], info["uuid"])
 
-        commission = deposit_total * 0.025
-        net = deposit_total - withdraw_total - delivery_total - commission
+        commission = dep * 0.025
+        net = dep - wd - dlv - commission
 
         devirs = load_devirs()
         devir = float(devirs.get(username, 0))
@@ -186,34 +189,22 @@ async def kasa(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await msg.edit_text(
             f"{username} KASA\n"
-            f"Yatırım: {tr(deposit_total)} TL\n"
-            f"Çekim: {tr(withdraw_total)} TL\n"
-            f"Teslimat: {tr(delivery_total)} TL\n"
-            f"Komisyon: {tr(commission)} TL\n"
-            f"Net: {tr(net)} TL\n"
-            f"Devir: {tr(devir)} TL\n"
-            f"TOPLAM: {tr(total)} TL"
+            f"Yatırım: {tr(dep)}\n"
+            f"Çekim: {tr(wd)}\n"
+            f"Teslimat: {tr(dlv)}\n"
+            f"Komisyon: {tr(commission)}\n"
+            f"Net: {tr(net)}\n"
+            f"Devir: {tr(devir)}\n"
+            f"TOPLAM: {tr(total)}"
         )
 
     except Exception as e:
         await msg.edit_text(f"Hata: {e}")
 
-# ---------------- SIMPLE COMMANDS ---------------- #
+# ---------------- SIMPLE ---------------- #
 
 async def gunceladres(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("TJ6mjSosVAEB4Ygh1LhQ4BkaFpea96Znmf")
-
-async def gandalf(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👑👑👑👑")
-
-async def esref(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👑👑👑👑")
-
-async def arafat(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👑🚬KUBAN👑🚬")
-
-async def sansa(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👸👸👸👸")
+    await update.message.reply_text("OK")
 
 # ---------------- FORWARD ---------------- #
 
@@ -238,12 +229,7 @@ async def forward_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if msg.text:
                 await context.bot.send_message(hedef, msg.text)
             else:
-                await context.bot.copy_message(
-                    hedef,
-                    msg.chat_id,
-                    msg.message_id,
-                    caption=msg.caption
-                )
+                await context.bot.copy_message(hedef, msg.chat_id, msg.message_id)
         except:
             pass
 
@@ -254,18 +240,15 @@ if __name__ == "__main__":
 
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
+    # kasa
     app.add_handler(MessageHandler(filters.Regex(r'^/kasa\d+$'), kasa))
 
-    app.add_handler(CommandHandler("gunceladres", gunceladres))
-    app.add_handler(CommandHandler("gandalf", gandalf))
-    app.add_handler(CommandHandler("esref", esref))
-    app.add_handler(CommandHandler("arafat", arafat))
-    app.add_handler(CommandHandler("sansa", sansa))
+    # aktif pasif (HER FORMAT)
+    app.add_handler(MessageHandler(filters.Regex(r'^/aktif'), aktif_sky))
+    app.add_handler(MessageHandler(filters.Regex(r'^/pasif'), pasif_sky))
 
-    # SKY SYSTEM
-    app.add_handler(MessageHandler(filters.Regex(r'^/aktifSKY\d+$'), aktif_sky))
-    app.add_handler(MessageHandler(filters.Regex(r'^/pasifSKY\d+$'), pasif_sky))
+    app.add_handler(CommandHandler("gunceladres", gunceladres))
 
     app.add_handler(MessageHandler(filters.ALL, forward_handler))
 
-    app.run_polling()
+    app.run_polling(drop_pending_updates=True)
