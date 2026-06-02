@@ -40,6 +40,79 @@ def load_devirs():
     except:
         return {}
 
+# ================= SKY HELPER ================= #
+
+def get_sky_by_number(number: str):
+    return USERS.get(f"SKY{number}")
+
+def is_admin(user_id: int):
+    admin_ids = os.environ.get("ADMIN_IDS", "").split(",")
+    admin_ids = [int(i.strip()) for i in admin_ids if i.strip()]
+    return user_id in admin_ids
+
+# ================= AKTİF / PASİF ================= #
+
+async def aktif(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        if not is_admin(update.effective_user.id):
+            await update.message.reply_text("❌ Sadece admin kullanabilir")
+            return
+
+        if not context.args:
+            await update.message.reply_text("Kullanım: /aktif 36")
+            return
+
+        number = context.args[0]
+        user = get_sky_by_number(number)
+
+        if not user:
+            await update.message.reply_text("❌ Kullanıcı bulunamadı")
+            return
+
+        uuid = user["uuid"]
+
+        cursor.execute(
+            "UPDATE users SET havale_alim = 1 WHERE userid = %s",
+            (uuid,)
+        )
+        db.commit()
+
+        await update.message.reply_text(f"✅ SKY{number} AKTİF")
+
+    except Exception as e:
+        await update.message.reply_text(f"Hata: {e}")
+
+
+async def pasif(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        if not is_admin(update.effective_user.id):
+            await update.message.reply_text("❌ Sadece admin kullanabilir")
+            return
+
+        if not context.args:
+            await update.message.reply_text("Kullanım: /pasif 36")
+            return
+
+        number = context.args[0]
+        user = get_sky_by_number(number)
+
+        if not user:
+            await update.message.reply_text("❌ Kullanıcı bulunamadı")
+            return
+
+        uuid = user["uuid"]
+
+        cursor.execute(
+            "UPDATE users SET havale_alim = 0 WHERE userid = %s",
+            (uuid,)
+        )
+        db.commit()
+
+        await update.message.reply_text(f"❌ SKY{number} PASİF")
+
+    except Exception as e:
+        await update.message.reply_text(f"Hata: {e}")
+
 # ---------------- PANEL FETCH ---------------- #
 
 async def fetch_user_amount(panel_config, user_uuid):
@@ -90,25 +163,17 @@ async def fetch_user_amount(panel_config, user_uuid):
 
         return deposit_total, withdraw_total, delivery_total
 
-# ---------------- KASA COMMAND ---------------- #
+# ---------------- KASA ---------------- #
 
 async def kasa(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = await update.message.reply_text("Kasa verileri alınıyor...")
 
     try:
-        admin_ids = os.environ.get("ADMIN_IDS", "").split(",")
-        admin_ids = [int(i.strip()) for i in admin_ids if i.strip()]
-
-        user_id = update.effective_user.id
-        if user_id not in admin_ids:
-            await msg.edit_text("Bu komutu sadece adminler kullanabilir.")
-            return
-
         command = update.message.text.lstrip("/").upper()
         username = command.replace("KASA", "SKY")
 
         if username not in USERS:
-            await msg.edit_text("Kullanıcı bulunamadı.")
+            await msg.edit_text("Kullanıcı bulunamadı")
             return
 
         def tr(x):
@@ -135,14 +200,14 @@ async def kasa(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Yatırım: {tr(deposit_total)} TL\n"
             f"Çekim: {tr(withdraw_total)} TL\n"
             f"Teslimat: {tr(delivery_total)} TL\n"
-            f"Komisyon (%2.5): {tr(commission)} TL\n"
+            f"Komisyon: {tr(commission)} TL\n"
             f"Net: {tr(net)} TL\n"
             f"Devir: {tr(devir)} TL\n"
             f"TOPLAM: {tr(total)} TL"
         )
 
     except Exception as e:
-        await msg.edit_text(f"Hata oluştu:\n{e}")
+        await msg.edit_text(f"Hata: {e}")
 
 # ---------------- SIMPLE COMMANDS ---------------- #
 
@@ -161,7 +226,7 @@ async def arafat(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def sansa(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("👸👸👸👸")
 
-# ---------------- FORWARD SYSTEM ---------------- #
+# ---------------- FORWARD ---------------- #
 
 BOT_USERNAME = os.environ.get("BOT_USERNAME")
 
@@ -170,56 +235,48 @@ HEDEF_GRUPLAR = [
 ]
 
 async def forward_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    message = update.message
-
-    if not message:
+    msg = update.message
+    if not msg:
         return
 
-    text = message.text or message.caption or ""
+    text = msg.text or msg.caption or ""
 
     if not BOT_USERNAME or BOT_USERNAME.lower() not in text.lower():
         return
 
-    grup_adi = message.chat.title or "Bilinmeyen Grup"
-    gonderen = message.from_user.first_name or "Anonim"
-
-    ust_bilgi = f" 💰 TAŞERON: {grup_adi}\n👤 Gönderen: {gonderen}\n\n"
-
     for hedef in HEDEF_GRUPLAR:
         try:
-            if message.text:
-                await context.bot.send_message(
-                    chat_id=hedef,
-                    text=ust_bilgi + message.text
-                )
+            if msg.text:
+                await context.bot.send_message(hedef, msg.text)
             else:
                 await context.bot.copy_message(
-                    chat_id=hedef,
-                    from_chat_id=message.chat_id,
-                    message_id=message.message_id,
-                    caption=ust_bilgi + (message.caption or "")
+                    hedef,
+                    msg.chat_id,
+                    msg.message_id,
+                    caption=msg.caption
                 )
-        except Exception as e:
-            print(f"Hata: {e}")
+        except:
+            pass
 
 # ---------------- MAIN ---------------- #
 
 if __name__ == "__main__":
     BOT_TOKEN = os.environ.get("BOT_TOKEN")
-    if not BOT_TOKEN:
-        raise RuntimeError("BOT_TOKEN bulunamadı")
 
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # kasa + commands
     app.add_handler(MessageHandler(filters.Regex(r'^/kasa\d+$'), kasa))
+
     app.add_handler(CommandHandler("gunceladres", gunceladres))
     app.add_handler(CommandHandler("gandalf", gandalf))
     app.add_handler(CommandHandler("esref", esref))
     app.add_handler(CommandHandler("arafat", arafat))
     app.add_handler(CommandHandler("sansa", sansa))
 
-    # forward system (etiket sistemi)
+    # SKY SYSTEM
+    app.add_handler(CommandHandler("aktif", aktif))
+    app.add_handler(CommandHandler("pasif", pasif))
+
     app.add_handler(MessageHandler(filters.ALL, forward_handler))
 
     app.run_polling()
