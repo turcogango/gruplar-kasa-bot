@@ -1,34 +1,19 @@
 import ssl
 import aiohttp
 import json
-import re
+from datetime import datetime, timedelta
 import os
 
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
-    MessageHandler,
     CommandHandler,
+    MessageHandler,
     filters,
     ContextTypes
 )
 
-# ---------------- USERS ---------------- #
-
-with open("users.json", "r", encoding="utf-8") as f:
-    USERS = json.load(f)
-
-def save_users():
-    with open("users.json", "w", encoding="utf-8") as f:
-        json.dump(USERS, f, indent=4, ensure_ascii=False)
-
-# ---------------- ADMIN ---------------- #
-
-def is_admin(user_id):
-    admin_ids = os.environ.get("ADMIN_IDS", "").split(",")
-    return str(user_id) in admin_ids
-
-# ---------------- PANEL ---------------- #
+# ---------------- PANEL CONFIG ---------------- #
 
 PANELS = {
     "panel1": {
@@ -43,109 +28,198 @@ PANELS = {
     }
 }
 
-# ---------------- USER PARSE ---------------- #
+# ---------------- USERS ---------------- #
 
-def parse_user(text):
-    text = text.upper().replace("/", "")
-    text = text.replace("AKTIF", "").replace("PASIF", "")
-    text = text.replace("SKY", "")
-    m = re.search(r"\d+", text)
-    return m.group() if m else None
+with open("users.json", "r", encoding="utf-8") as f:
+    USERS = json.load(f)
 
-# ---------------- 🔥 FIXED PANEL UPDATE ---------------- #
+def load_devirs():
+    try:
+        with open("devir.json", "r", encoding="utf-8") as f:
+            return json.load(f)
+    except:
+        return {}
 
-async def update_panel(panel, uuid, value):
+# ---------------- PANEL FETCH ---------------- #
+
+async def fetch_user_amount(panel_config, user_uuid):
     ssl_ctx = ssl.create_default_context()
     ssl_ctx.check_hostname = False
     ssl_ctx.verify_mode = ssl.CERT_NONE
 
-    base = panel["url"]
+    login_url = f"{panel_config['url']}/login"
+    reports_url = f"{panel_config['url']}/reports/quickly"
 
-    cookie_jar = aiohttp.CookieJar()  # 🔥 KRİTİK FIX
-
-    async with aiohttp.ClientSession(cookie_jar=cookie_jar, connector=aiohttp.TCPConnector(ssl=ssl_ctx)) as session:
-
-        # LOGIN PAGE
-        async with session.get(f"{base}/login") as r:
-            html = await r.text()
+    async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=ssl_ctx)) as session:
+        async with session.get(login_url) as r:
+            text = await r.text()
 
         token = ""
-        for line in html.splitlines():
+        for line in text.splitlines():
             if 'name="_token"' in line:
                 token = line.split('value="')[1].split('"')[0]
                 break
 
-        # LOGIN
-        await session.post(f"{base}/login", data={
+        await session.post(login_url, data={
             "_token": token,
-            "email": panel["username"],
-            "password": panel["password"]
+            "email": panel_config['username'],
+            "password": panel_config['password']
         })
 
-        # VERIFY SESSION
-        async with session.get(f"{base}/users") as r:
-            check = await r.text()
+        async with session.get(reports_url) as r:
+            text = await r.text()
 
-        if "logout" not in check.lower():
-            print("LOGIN FAILED")
-            return
+        csrf = ""
+        for line in text.splitlines():
+            if 'csrf-token' in line:
+                csrf = line.split('content="')[1].split('"')[0]
+                break
 
-        # UPDATE USER (PATCH FORM)
-        url = f"{base}/users/{uuid}"
+        today = (datetime.utcnow() + timedelta(hours=3)).strftime("%Y-%m-%d")
 
-        await session.post(url, data={
-            "_method": "PATCH",
-            "_token": token,
-            "havale_alim": str(value)
-        })
+        async with session.post(
+            reports_url,
+            headers={"X-CSRF-TOKEN": csrf, "Content-Type": "application/json"},
+            json={"site": "", "dateone": today, "datetwo": today, "bank": "", "user": user_uuid}
+        ) as r:
+            data = await r.json()
 
-# ---------------- MAIN COMMAND ---------------- #
+        deposit_total = float(data.get("deposit", [0])[0] or 0)
+        withdraw_total = float(data.get("withdraw", [0])[0] or 0)
+        delivery_total = float(data.get("delivery", [0, 0])[1] or 0)
 
-async def aktif_pasif(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        return deposit_total, withdraw_total, delivery_total
+
+# ---------------- KASA COMMAND ---------------- #
+
+async def kasa(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = await update.message.reply_text("Kasa verileri alınıyor...")
+
     try:
-        if not is_admin(update.effective_user.id):
-            await update.message.reply_text("❌ Admin değil")
+        admin_ids = os.environ.get("ADMIN_IDS", "").split(",")
+        admin_ids = [int(i.strip()) for i in admin_ids if i.strip()]
+
+        user_id = update.effective_user.id
+        if user_id not in admin_ids:
+            await msg.edit_text("Bu komutu sadece adminler kullanabilir.")
             return
 
-        text = update.message.text.upper()
+        command = update.message.text.lstrip("/").upper()
+        username = command.replace("KASA", "SKY")
 
-        value = 1 if "AKTIF" in text else 0
-
-        num = parse_user(text)
-        if not num:
-            await update.message.reply_text("❌ Kullanıcı bulunamadı")
+        if username not in USERS:
+            await msg.edit_text("Kullanıcı bulunamadı.")
             return
 
-        key = f"SKY{num}"
+        def tr(x):
+            return f"{int(x):,}".replace(",", ".")
 
-        if key not in USERS:
-            await update.message.reply_text("❌ USER yok")
-            return
+        info = USERS[username]
+        panel = info["panel"]
+        uuid = info["uuid"]
 
-        user = USERS[key]
+        deposit_total, withdraw_total, delivery_total = await fetch_user_amount(
+            PANELS[panel], uuid
+        )
 
-        # JSON update
-        USERS[key]["havale_alim"] = value
-        save_users()
+        commission = deposit_total * 0.025
+        net = deposit_total - withdraw_total - delivery_total - commission
 
-        # PANEL update
-        await update_panel(PANELS[user["panel"]], user["uuid"], value)
+        devirs = load_devirs()
+        devir = float(devirs.get(username, 0))
 
-        await update.message.reply_text(
-            f"✅ {key} {'AKTİF' if value == 1 else 'PASİF'}"
+        total = net + devir
+
+        await msg.edit_text(
+            f"{username} KASA\n"
+            f"Yatırım: {tr(deposit_total)} TL\n"
+            f"Çekim: {tr(withdraw_total)} TL\n"
+            f"Teslimat: {tr(delivery_total)} TL\n"
+            f"Komisyon (%2.5): {tr(commission)} TL\n"
+            f"Net: {tr(net)} TL\n"
+            f"Devir: {tr(devir)} TL\n"
+            f"TOPLAM: {tr(total)} TL"
         )
 
     except Exception as e:
-        await update.message.reply_text(f"Hata: {e}")
+        await msg.edit_text(f"Hata oluştu:\n{e}")
 
-# ---------------- BOT ---------------- #
+# ---------------- SIMPLE COMMANDS ---------------- #
+
+async def gunceladres(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("TJ6mjSosVAEB4Ygh1LhQ4BkaFpea96Znmf")
+
+async def gandalf(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("👑👑👑👑")
+
+async def esref(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("👑👑👑👑")
+
+async def arafat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("👑🚬KUBAN👑🚬")
+
+async def sansa(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("👸👸👸👸")
+
+# ---------------- FORWARD SYSTEM ---------------- #
+
+BOT_USERNAME = os.environ.get("BOT_USERNAME")
+
+HEDEF_GRUPLAR = [
+    int(x) for x in os.environ.get("TARGET_GROUPS", "").split(",") if x.strip()
+]
+
+async def forward_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.message
+
+    if not message:
+        return
+
+    text = message.text or message.caption or ""
+
+    if not BOT_USERNAME or BOT_USERNAME.lower() not in text.lower():
+        return
+
+    grup_adi = message.chat.title or "Bilinmeyen Grup"
+    gonderen = message.from_user.first_name or "Anonim"
+
+    ust_bilgi = f" 💰 TAŞERON: {grup_adi}\n👤 Gönderen: {gonderen}\n\n"
+
+    for hedef in HEDEF_GRUPLAR:
+        try:
+            if message.text:
+                await context.bot.send_message(
+                    chat_id=hedef,
+                    text=ust_bilgi + message.text
+                )
+            else:
+                await context.bot.copy_message(
+                    chat_id=hedef,
+                    from_chat_id=message.chat_id,
+                    message_id=message.message_id,
+                    caption=ust_bilgi + (message.caption or "")
+                )
+        except Exception as e:
+            print(f"Hata: {e}")
+
+# ---------------- MAIN ---------------- #
 
 if __name__ == "__main__":
     BOT_TOKEN = os.environ.get("BOT_TOKEN")
+    if not BOT_TOKEN:
+        raise RuntimeError("BOT_TOKEN bulunamadı")
 
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # sadece aktif/pasif sistemi
-    app.add_handler(MessageHandler(filters.Regex(r'^(\/)?(aktif|pasif)'), aktif_pasif))
+    # kasa + commands
+    app.add_handler(MessageHandler(filters.Regex(r'^/kasa\d+$'), kasa))
+    app.add_handler(CommandHandler("gunceladres", gunceladres))
+    app.add_handler(CommandHandler("gandalf", gandalf))
+    app.add_handler(CommandHandler("esref", esref))
+    app.add_handler(CommandHandler("arafat", arafat))
+    app.add_handler(CommandHandler("sansa", sansa))
 
-    app.run_polling(drop_pending_updates=True)
+    # forward system (etiket sistemi)
+    app.add_handler(MessageHandler(filters.ALL, forward_handler))
+
+    app.run_polling()
